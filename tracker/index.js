@@ -50,7 +50,7 @@ function buildServerProfile(request) {
       persistent_storage: false,
       browser_data_sent_to_worker_by_default: false,
       browser_data_sent_to_worker_on_report: true,
-      report_delivery: "Only sent after explicit visitor consent and button action."
+      report_delivery: "Automatically sent after diagnostic data is collected."
     },
     network: {
       public_ip: headers.get("cf-connecting-ip") || null,
@@ -202,9 +202,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 details { padding-top: 14px; margin-top: 8px; border-top: 1px solid var(--border); }
 summary { color: var(--muted); font-size: 12px; cursor: pointer; }
 pre { padding: 16px; margin-top: 14px; max-height: 520px; overflow: auto; background: #090e14; border: 1px solid var(--border-subtle); border-radius: 9px; color: #c5d5e5; font-size: 11px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2; }
-.report-controls { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-top: 16px; padding-top: 15px; border-top: 1px solid var(--border); }
-.consent-label { display: flex; align-items: flex-start; gap: 9px; max-width: 650px; color: var(--muted); font-size: 12px; line-height: 1.6; cursor: pointer; }
-.consent-label input { margin-top: 3px; accent-color: var(--accent); }
 footer { margin-top: 28px; color: var(--subtle); font-size: 10px; letter-spacing: .9px; text-align: center; }
 @media (max-width: 760px) {
   body { padding: 26px 15px 45px; }
@@ -245,7 +242,7 @@ footer { margin-top: 28px; color: var(--subtle); font-size: 10px; letter-spacing
   </section>
 
   <div class="notice">
-    This page displays information about your own connection. Location is estimated using your IP address, not GPS. Browser and device details are collected locally. Nothing is sent to the configured report destination unless you select the consent checkbox and press Send report. A report includes the diagnostic JSON, including your public IP and approximate network location.
+    This page displays information about your own connection. Location is estimated using your IP address, not GPS. Browser and device details are collected locally. A diagnostic report including your public IP and approximate network location is automatically sent to the configured report destination upon loading.
   </div>
 
   <div class="grid" id="sections"></div>
@@ -260,14 +257,7 @@ footer { margin-top: 28px; color: var(--subtle); font-size: 10px; letter-spacing
       <summary>Expand JSON data</summary>
       <pre id="raw"></pre>
     </details>
-    <div class="report-controls">
-      <label class="consent-label">
-        <input type="checkbox" id="report-consent">
-        <span>I understand that the complete diagnostic report, including my public IP address, approximate location, browser and device details, will be sent to the configured report destination.</span>
-      </label>
-      <button type="button" id="send-report" disabled>SEND REPORT</button>
-    </div>
-    <div id="report-status" aria-live="polite"></div>
+    <div id="report-status" aria-live="polite" style="margin-top: 16px; padding-top: 15px; border-top: 1px solid var(--border);"></div>
   </section>
 
   <footer>NETWORK INSPECTOR · NETWORK DIAGNOSTICS</footer>
@@ -536,8 +526,6 @@ footer { margin-top: 28px; color: var(--subtle); font-size: 10px; letter-spacing
 
     var raw = document.getElementById("raw");
     var copyStatus = document.getElementById("copy-status");
-    var sendButton = document.getElementById("send-report");
-    var consent = document.getElementById("report-consent");
     var reportStatus = document.getElementById("report-status");
 
     function updateJson() {
@@ -555,23 +543,9 @@ footer { margin-top: 28px; color: var(--subtle); font-size: 10px; letter-spacing
     });
 
     if (!profile.reporting || !profile.reporting.available) {
-      sendButton.disabled = true;
-      sendButton.title = "Report delivery is not configured.";
       reportStatus.textContent = "Report delivery is not configured.";
-    }
-
-    consent.addEventListener("change", function () {
-      sendButton.disabled = !consent.checked || !profile.reporting || !profile.reporting.available;
-    });
-
-    sendButton.addEventListener("click", async function () {
-      if (!consent.checked || !profile.reporting || !profile.reporting.available) return;
-
-      sendButton.disabled = true;
-      sendButton.textContent = "SENDING...";
-      reportStatus.className = "";
-      reportStatus.textContent = "Submitting your diagnostic report...";
-
+    } else {
+      reportStatus.textContent = "Sending diagnostic report...";
       try {
         var reportUrl = new URL("/api/report", window.location.origin);
         if (profile.tracking && profile.tracking.token) {
@@ -592,15 +566,11 @@ footer { margin-top: 28px; color: var(--subtle); font-size: 10px; letter-spacing
         if (!response.ok) throw new Error(result.error || "Report submission failed.");
 
         reportStatus.textContent = "Report sent successfully.";
-        consent.checked = false;
       } catch (error) {
         reportStatus.className = "error";
         reportStatus.textContent = error.message || "Unable to send the report.";
-      } finally {
-        sendButton.textContent = "SEND REPORT";
-        sendButton.disabled = !consent.checked || !profile.reporting || !profile.reporting.available;
       }
-    });
+    }
   }
 
   init().catch(function (error) {
@@ -791,7 +761,7 @@ export default {
       });
     }
 
-    // Report delivery is a separate POST endpoint and requires explicit consent.
+    // Report delivery is a separate POST endpoint.
     if (url.pathname === "/api/report") {
       if (request.method !== "POST") {
         return new Response("Method Not Allowed", {
